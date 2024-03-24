@@ -30,9 +30,12 @@ class vehicleRoutingEnv(gym.Env):
         #Create start information for reset function to reference
         self.start_current_customer_list=copy.deepcopy(self.current_customer_list)
         self.start_current_truck_capacity=copy.deepcopy(self.current_truck_capacity)
-        self.start_total_truck_capacity=copy.depcopy(self.total_truck_capacity)
+        self.start_total_truck_capacity=copy.deepcopy(self.total_truck_capacity)
         self.depot_location=depot_location
-        self.depot_index=self.current_customer_list.index(self.depot_location)
+        self.start_depot_location=copy.deepcopy(self.depot_location)
+        self.position_list=[0 for i in range(len(self.current_customer_list))]
+        self.position_list[0]=1
+        self.start_position_list=copy.deepcopy(self.position_list)
         #Define unvisited and visited vector to keep track
         #Names of indexes that are referenced frequently
         #Index values for current customer list information
@@ -47,11 +50,14 @@ class vehicleRoutingEnv(gym.Env):
         self.action_right=1
         self.action_pickup=2
         self.action_goback=3
+        #Starts move at back to depot
+        self.last_move=self.action_goback
         #Light penalty for swiping left and right
         self.left_right_reward = -0.001
         #Defining visited and unvisited list
         self.visited=[]
-        self.unvisited=[i for i in range(1,len(self.current_customer_list)+1)]
+        #Length is N customers+1 because includes depot
+        self.unvisited=[i for i in range(1,len(self.current_customer_list))]
         
         # num customer plust depot possible actions: 0=Left, 1=right, 2=select, 3=return to depot
         self.action_space = spaces.Discrete(4)  
@@ -59,21 +65,27 @@ class vehicleRoutingEnv(gym.Env):
         # Observation space is a list of floats
         # Observation contains:
         # each customer sublist and its information
-        self.observation_space = gym.spaces.Box(low=0, high=1000, shape=(len(self.unvisited)*9+2,), dtype=np.float32)
-
+        #Shape is each customer*its 9 attributes, then plus two for depot coordinates, then plus position list length 
+        self.observation_space = gym.spaces.Box(low=-1000, high=1000, shape=(len(self.unvisited)*9+2+len(self.position_list),), dtype=np.float32)
+        
+    def sort(self,list):
+        # Sort the list of tuples based on the first element of each tuple
+        sorted_list = sorted(list, key=lambda x: x[0])
+        return sorted_list
+        
     def reorder_customers(self):
         #Suppose you had depot coordinate
         depot=self.depot_location
         #rel_dist list will be a parallel list to reoredered customer location list that stores distances to depot for the customer
-        self.rel_dist = np.array([])
+        self.rel_dist = []
         self.reordered_customer_list=[]
         for customer in self.current_customer_list:
             #temporarily soley base ordering off distance. In order to make it generalizable later on consider angle to depot or demand or other attributes
             #Only if not depot, calculate distance. At the end of reorder_customers depot will be inserted to the reordered list
-            if customer!=self.depot:
+            if customer!=self.depot_location:
                 dist = (m.sqrt(((depot[0]-customer[self.index_coord][0])**2)+(depot[1]-customer[self.index_coord][1])**2))
-                np.append((self.rel_dist, (dist,customer))
-        self.rel_dist.sort(key=lambda x: x[0])
+                self.rel_dist.append((dist,customer))
+        self.sort(self.rel_dist)
         for i in range(len(self.rel_dist)):
             self.reordered_customer_list.append(self.rel_dist[i][1])
         self.reordered_customer_list.insert(0,self.depot_location)
@@ -103,84 +115,87 @@ class vehicleRoutingEnv(gym.Env):
         self.current_customer_list = copy.deepcopy(self.start_current_customer_list)
         self.current_truck_capacity=copy.deepcopy(self.start_current_truck_capacity)
         self.total_truck_capacity=copy.deepcopy(self.start_total_truck_capacity)
-        self.depot_location=self.current_customer_list.index((self.depot_location))
-        self.unvisited=[i for i in range(1,len(self.customer_location_list)+1)]
+        self.depot_location=copy.deepcopy(self.start_depot_location)
+        self.position_list=copy.deepcopy(self.start_position_list)
+        self.last_move=self.action_goback
+        self.unvisited=[i for i in range(1,len(self.current_customer_list))]
         self.visited=[]
         state = []
         for sublist in self.current_customer_list:
-            state.extend([sublist[0][0],sublist[0][1],sublist[1],sublist[2],sublist[3],sublist[4][0],sublist[4][1],sublist[5][0],sublist[5][1]])
+            if sublist!=self.depot_location:
+                state.extend([sublist[0][0],sublist[0][1],sublist[1],sublist[2],sublist[3],sublist[4][0],sublist[4][1],sublist[5][0],sublist[5][1]])
+            else:
+                state.append(self.depot_location[0])
+                state.append(self.depot_location[1])
+        state.insert(0,self.position_list)
         f_state = self.flat_list(state)
         return f_state, {"cust list":self.current_customer_list, "truck cap":self.current_truck_capacity, "max cap":self.total_truck_capacity}
 
-    #defining update function for step, to recalculate values for each customer
-    def intialize_attributes(self):
-        #Suppose you had depot coordinate
-        depot=self.depot_location
-        #start lists used as reference when reset is called
-        for customer in self.current_customer_list:
-            #distance to current truck location
-            current_index=self.reordered_customer_list.index(customer)
-            customer[self.index_dist_to_truck]=(m.sqrt((\
-        (customer[self.index_coord][0]-depot[0])**2)\
-        +(customer[self.index_coord][1]-depot[1])**2))
-            #position relative to depot
-            customer[self.index_pos_rel_depot]=(customer[self.index][0]-depot[0],customer[self.index_coord][1]-depot[1])
-            #position relative to current location
-            customer[self.index_pos_rel_truck]=(customer[self.index_coord][0]-self.current_customer_list[0][self.index_coord][0],customer[self.index_coord][1]-self.current_customer_list[0][self.index_coord][1])
-            self.reordered_customer_list[current_index]=customer
-        state = []
-        #Create flat state which are the inputs the neural network takes in
-        #The neural network takes 
-        for sublist in self.current_customer_list:
-            state.extend([sublist[self.index_coord][0],sublist[self.index_coord][1],sublist[self.index_demand],sublist[self.index_dist_to_depot],sublist[self.index_dist_to_truck],sublist[self.index_pos_rel_depot][0],sublist[self.index_pos_rel_depot][1],sublist[self.index_pos_rel_truck][0],sublist[self.index_pos_rel_truck][1]])
-        f_state = self.flat_list(state)
-        return f_state, {"cust list":self.current_customer_list, "truck cap":self.current_truck_capacity, "max cap":self.total_truck_capacity}
-
+    #Defining update functiong for each step to recalculate values for each customer
     def update(self):
         #Suppose you had depot coordinate
-        depot=self.depot_location
         #start lists used as reference when reset is called
         for customer in self.current_customer_list:
+            #print(f"current_customer: {customer}")
+            #distance to depot calculated before hand (instance creator)
             #distance to current truck location
-            current_index=self.reordered_customer_list.index(customer)
-            customer[self.index_dist_to_truck]=(m.sqrt((\
-        (customer[self.index_coord][0]-depot[0])**2)\
-        +(customer[self.index_coord][1]-depot[1])**2))
-            #position relative to current location
-            customer[self.index_pos_rel_truck]=(customer[self.index_coord][0]-self.current_customer_list[0][self.index_coord][0],customer[self.index_coord][1]-self.current_customer_list[0][self.index_coord][1])
-            self.reordered_customer_list[current_index]=customer
+            if customer!=self.depot_location: 
+                current_index=self.position_list.index(1)
+                customer[self.index_dist_to_truck]=(m.sqrt((\
+            (customer[self.index_coord][0]-self.depot_location[0])**2)\
+            +(customer[self.index_coord][1]-self.depot_location[1])**2))
+                #position relative to depot calculated before hand (instance creator)
+                #position relative to current location
+                current_index=self.position_list.index(1)
+                #print(f"current_customer_list: {self.current_customer_list}")
+                #print(f"index: {current_index}")
+                #If currently at depot, set position relative to current location to be the same as position relative to depot
+                if current_index==0:
+                    customer[self.index_pos_rel_truck]=customer[self.index_pos_rel_depot]
+                else:
+                    customer[self.index_pos_rel_truck]=(customer[self.index_coord][0]-self.current_customer_list[current_index][self.index_coord][0],customer[self.index_coord][1]-self.current_customer_list[current_index][self.index_coord][1])
+                #self.reordered_customer_list[current_index]=customer
         state = []
         #Create flat state which are the inputs the neural network takes in
-        #The neural network takes in the information for every customer
+        #The neural network takes flat state as input
         for sublist in self.current_customer_list:
-            state.extend([sublist[self.index_coord][0],sublist[self.index_coord][1],sublist[self.index_demand],sublist[self.index_dist_to_depot],sublist[self.index_dist_to_truck],sublist[self.index_pos_rel_depot][0],sublist[self.index_pos_rel_depot][1],sublist[self.index_pos_rel_truck][0],sublist[self.index_pos_rel_truck][1]])
+            if sublist!=self.depot_location:
+                state.extend([sublist[self.index_coord][0],sublist[self.index_coord][1],sublist[self.index_demand],\
+                sublist[self.index_dist_to_depot],sublist[self.index_dist_to_truck],sublist[self.index_pos_rel_depot][0],\
+                sublist[self.index_pos_rel_depot][1],sublist[self.index_pos_rel_truck][0],sublist[self.index_pos_rel_truck][1]])
+            else:
+                state.append(self.depot_location[0])
+                state.append(self.depot_location[1])
+        state.insert(0,self.position_list)
         f_state = self.flat_list(state)
         return f_state, {"cust list":self.current_customer_list, "truck cap":self.current_truck_capacity, "max cap":self.total_truck_capacity}
         
-    #Checks four options and retunrs mask
+    #Checks four options and returns mask
     # num customer plust depot possible actions: 0=Left, 1=right, 2=select, 3=return to depot
     #When mask=1, index is valid. When mask=0, index is invalid at that location
-    def get_mask(self):
-        left  = 0
-        right = 0
-        pickup= 0
+    #Mask is indices of invalid locations
+    def get_invalid_ones(self):
+        mask=[]
+        #If at depot, you cannot "pickup" the depot
+        if self.position_list.index(1)==0:
+            mask.append(self.action_pickup)
         #If already at depot, then going back to depot is invalid, otherwise depot is always available
-        if self.current_customer_list[0]==self.depot_location:
-            goback=0
-        else:
-            goback= 1
-        #By default depot is only option
-        current_index=self.reordered_customer_list.index(self.current_customer_list[0])
-        for customer_index in range(len(self.reordered_customer_list)):
+        if self.current_truck_capacity==self.total_truck_capacity:
+            mask.append(self.action_goback)
+        #By default depot is only option 
+        current_index=self.position_list.index(1)
+        left_right_available=False
+        for customer_index in range(len(self.current_customer_list)):
             #If valid positon at all in any customer, then left and right become available
-            if self.reordered_customer_list[customer_index][1]<self.current_truck_capacity and customer_index in self.unvisited:
-                left = 1
-                right= 1
+            if self.current_customer_list[customer_index][1]<self.current_truck_capacity and customer_index in self.unvisited:
+                left_right_available=True
                 break
+        if left_right_available==False:
+            mask.append(self.action_left)
+            mask.append(self.action_right)
         #If valid current location pickup is valid
-        if self.is_valid_position(current_index):
-            pickup = 1
-        mask = [left, right, pickup, goback]
+        if self.is_valid_position(current_index)==False:
+            mask.append(self.action_pickup)
         return mask
 
         
@@ -191,7 +206,7 @@ class vehicleRoutingEnv(gym.Env):
         if index == 0:
             valid=True
         elif index in self.unvisited:
-            if self.reordered_customer_list[index][self.index_demand]<=self.current_truck_capacity:
+            if self.current_customer_list[index][self.index_demand]<=self.current_truck_capacity:
                 valid=True
             else:
                 valid=False
@@ -208,18 +223,28 @@ class vehicleRoutingEnv(gym.Env):
         action = int(action)
         #Current customer index in context of original reordered list
         # num customer plust depot possible actions: 0=Left, 1=right, 2=select, 3=return to depot
-        current_index=self.reordered_customer_list.index(self.current_customer_list[0])
+        current_index=self.position_list.index(1)
         if action==self.action_left:
             #Shifts the list
-            self.current_customer_list = self.current_customer_list[len(self.current_customer_list)-1] + self.current_customer_list[0:len(self.current_customer_list)-1]
+            #self.current_customer_list = self.current_customer_list[len(self.current_customer_list)-1] + self.current_customer_list[0:len(self.current_customer_list)-1]
+            self.position_list[current_index]=0
+            if current_index==0:
+                self.position_list[len(self.position_list)-1]=1
+            else:
+                self.position_list[current_index-1]=1
+            self.last_move=self.action_left
             #Slight negative reward for taking an action without making a move
-            self.depot_index=self.current_customer_list.index(self.depot_location)
             reward=self.left_right_reward
         elif action==self.action_right:
             #Shifts the list
-            self.current_customer_list = self.current_customer_list[1:] + self.current_customer_list[0]
-            #Sligh negative reward for taking an action without making a move
-            self.depot_index=self.current_customer_list.index(self.depot_location)
+            self.position_list[current_index]=0
+            if current_index==len(self.position_list)-1:
+                self.position_list[0]=1
+            else:
+                self.position_list[current_index+1]=1
+            #self.current_customer_list = self.current_customer_list[1:] + self.current_customer_list[0]
+            #Slight negative reward for taking an action without making a move
+            self.last_move=self.action_right
             reward=self.left_right_reward
         elif action==self.action_pickup:
             if self.is_valid_position(current_index):
@@ -229,21 +254,25 @@ class vehicleRoutingEnv(gym.Env):
                 #Adjust truck capacity accordingly
                 #Adjust customer demand accordingly
                 self.current_truck_capacity=self.current_truck_capacity-self.current_customer_list[0][1]
+                self.current_truck_capacity=self.total_truck_capacity
                 #Adjust the customer's demand to 0 because the customers order has been filled
-                self.current_customer_list[0][self.index_demand]=0
+                self.current_customer_list[current_index][self.index_demand]=0
                 #Reward is negative distance from current location to old location
-                reward=self.current_customer_list[0][self.index_dist_to_truck]
+                reward=self.current_customer_list[current_index][self.index_dist_to_truck]
+                self.last_move=self.action_pickup
                 self.update()
             else:
                 # action==self.action_pickup and !self.is_valid_position(current_index):
                 reward=-1e16
         elif action==self.action_goback:
             #Reward is distance to depot
-            reward=self.current_customer_list[0][self.index_dist_to_depot]
+            self.position_list[current_index]=0
+            self.position_list[0]=1
+            reward=self.current_customer_list[current_index][self.index_dist_to_depot]
             #Shift the list accordingly
-            self.current_customer_list=self.current_customer_list[self.depot_index:]+self.current_customer_list[0:self.depot_index]
+            #self.current_customer_list=self.current_customer_list[self.depot_index:]+self.current_customer_list[0:self.depot_index]
             #Refill truck capacity
-            self.depot_index=self.current_customer_list.index(self.depot_location)
+            self.last_move=self.action_goback
             self.current_truck_capacity=self.total_truck_capacity
         if len(self.unvisited)==0:
             isDone = True
@@ -262,7 +291,14 @@ class vehicleRoutingEnv(gym.Env):
         #The neural network takes in the information for every customer
         #In total, 9 values for each customer
         for sublist in self.current_customer_list:
-            state.extend([sublist[self.index_coord][0],sublist[self.index_coord][1],sublist[self.index_demand],sublist[self.index_dist_to_depot],sublist[self.index_dist_to_truck],sublist[self.index_pos_rel_depot][0],sublist[self.index_pos_rel_depot][1],sublist[self.index_pos_rel_truck][0],sublist[self.index_pos_rel_truck][1]])
+            if sublist!=self.depot_location:
+                state.extend([sublist[self.index_coord][0],sublist[self.index_coord][1],sublist[self.index_demand],\
+                sublist[self.index_dist_to_depot],sublist[self.index_dist_to_truck],sublist[self.index_pos_rel_depot][0],\
+                sublist[self.index_pos_rel_depot][1],sublist[self.index_pos_rel_truck][0],sublist[self.index_pos_rel_truck][1]])
+            else:
+                state.append(self.depot_location[0])
+                state.append(self.depot_location[1])
+        state.insert(0,self.position_list)
         f_state = self.flat_list(state)
         return f_state, reward, isDone, truncated, {"visited":self.visited}
 
@@ -274,7 +310,12 @@ class vehicleRoutingEnv(gym.Env):
         #printing out matrices
         state = []
         for sublist in self.current_customer_list:
-            state.extend([sublist[0][0],sublist[0][1],sublist[1],sublist[2],sublist[3],sublist[4][0],sublist[4][1],sublist[5][0],sublist[5][1]])
+            if sublist!=self.depot_location:
+                state.extend([sublist[0][0],sublist[0][1],sublist[1],sublist[2],sublist[3],sublist[4][0],sublist[4][1],sublist[5][0],sublist[5][1]])
+            else:
+                state.append(self.depot_location[0])
+                state.append(self.depot_location[1])
+        state.insert(0,self.position_list)
         f_state = self.flat_list(state)
         print(f"States: {state}")
         print(f"States List: {f_state}")
@@ -283,5 +324,5 @@ class vehicleRoutingEnv(gym.Env):
         print(f"Current Customer List: {self.current_customer_list}")
         print(f"Truck Current Capacity: {self.current_truck_capacity}")
         print(f"Truck Max Capacity: {self.total_truck_capacity}")
-        print(f"Depot Index: {self.depot_index}")
         print(f"Depot Location: {self.depot_location}")
+        print(f"Position List: {self.position_list}")
