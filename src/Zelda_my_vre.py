@@ -264,20 +264,26 @@ class vehicleRoutingEnv(gym.Env):
             #Shifts the list
             #self.current_customer_list = self.current_customer_list[len(self.current_customer_list)-1] + self.current_customer_list[0:len(self.current_customer_list)-1]
             self.position_list[current_index]=0
-            if current_index==0:
-                self.position_list[len(self.position_list)-1]=1
-            else:
-                self.position_list[current_index-1]=1
+            tmp_index=current_index
+            while self.is_valid_position(tmp_index)==False:
+                if tmp_index==0:
+                    tmp_index=len(self.position_list)-1
+                else:
+                    tmp_index-=1
+            self.position_list[tmp_index]=1
             self.last_move=self.action_left
             #Slight negative reward for taking an action without making a move
             reward=self.left_right_reward
         elif action==self.action_right:
             #Shifts the list
             self.position_list[current_index]=0
-            if current_index==len(self.position_list)-1:
-                self.position_list[0]=1
-            else:
-                self.position_list[current_index+1]=1
+            tmp_index=current_index
+            while self.is_valid_position(tmp_index)==False:
+                if tmp_index==len(self.position_list)-1:
+                    tmp_index=0
+                else:
+                    tmp_index+=1
+            self.position_list[tmp_index]=1
             #self.current_customer_list = self.current_customer_list[1:] + self.current_customer_list[0]
             #Slight negative reward for taking an action without making a move
             self.last_move=self.action_right
