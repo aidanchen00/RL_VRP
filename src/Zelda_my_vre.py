@@ -65,8 +65,8 @@ class vehicleRoutingEnv(gym.Env):
         # Observation space is a list of floats
         # Observation contains:
         # each customer sublist and its information
-        #Shape is each customer*its 9 attributes, then plus two for depot coordinates, then plus position list length 
-        self.observation_space = gym.spaces.Box(low=-1000, high=1000, shape=(len(self.unvisited)*9+2+len(self.position_list),), dtype=np.float32)
+        #Shape is each customer*its 9 attributes, then plus two for depot coordinates, then plus two for current capacity and max capacity, then plus position list length 
+        self.observation_space = gym.spaces.Box(low=-1000, high=1000, shape=(len(self.unvisited)*9+4+len(self.position_list),), dtype=np.float32)
         
     def sort(self,list):
         # Sort the list of tuples based on the first element of each tuple
@@ -128,6 +128,9 @@ class vehicleRoutingEnv(gym.Env):
                 state.append(self.depot_location[0])
                 state.append(self.depot_location[1])
         state.insert(0,self.position_list)
+        #Appending information about currrent and total capacity
+        state.append(self.current_truck_capacity)
+        state.append(self.total_truck_capacity)
         f_state = self.flat_list(state)
         return f_state, {"cust list":self.current_customer_list, "truck cap":self.current_truck_capacity, "max cap":self.total_truck_capacity}
 
@@ -167,6 +170,9 @@ class vehicleRoutingEnv(gym.Env):
                 state.append(self.depot_location[0])
                 state.append(self.depot_location[1])
         state.insert(0,self.position_list)
+        #Appending information about currrent and total capacity
+        state.append(self.current_truck_capacity)
+        state.append(self.total_truck_capacity)
         f_state = self.flat_list(state)
         return f_state, {"cust list":self.current_customer_list, "truck cap":self.current_truck_capacity, "max cap":self.total_truck_capacity}
         
@@ -198,13 +204,42 @@ class vehicleRoutingEnv(gym.Env):
             mask.append(self.action_pickup)
         return mask
 
+    def get_invalid_ones_w_states(self,state):
+        mask=[]
+        #If at depot, you cannot "pickup" the depot
+        current_capacity=state[len(state)-2]
+        total_capacity=state[len(state)-1]
+        position_list=state[0:len(self.position_list)]
+        if state[0]==1:
+            mask.append(self.action_pickup)
+        #If already at depot, then going back to depot is invalid, otherwise depot is always available
+        if current_capacity==total_capacity:
+            mask.append(self.action_goback)
+        #By default depot is only option 
+        current_index=position_list.index(1)
+        left_right_available=False
+        demands = state[len(self.position_list)+self.index_demand::len(self.current_customer_list[1])]
+        for customer_index in range(len(demands)):
+            #If valid positon at all in any customer, then left and right become available
+            #Checks if demand less than current capacity and demand>0 as a way to see if its been picked up (only works for now where partial fulfillments are not possible)
+            if demands[customer_index]<current_capacity and demands[current_index]>0:
+                left_right_available=True
+                break
+        if left_right_available==False:
+            mask.append(self.action_left)
+            mask.append(self.action_right)
+        #If valid current location pickup is valid, basically checking is_valid_position conditions in one statement
+        if demands[current_index]>current_capacity or current_index==0:
+            mask.append(self.action_pickup)
+        return mask
+
         
-    #determining if location inputted is valid
+    #determining if location inputted is valid to pick up
     def is_valid_position(self, index):
         valid=False
         #If you are at depot, you are at valid location
         if index == 0:
-            valid=True
+            valid=False
         elif index in self.unvisited:
             if self.current_customer_list[index][self.index_demand]<=self.current_truck_capacity:
                 valid=True
@@ -224,6 +259,7 @@ class vehicleRoutingEnv(gym.Env):
         #Current customer index in context of original reordered list
         # num customer plust depot possible actions: 0=Left, 1=right, 2=select, 3=return to depot
         current_index=self.position_list.index(1)
+#        print(f"Original current index: {current_index}")
         if action==self.action_left:
             #Shifts the list
             #self.current_customer_list = self.current_customer_list[len(self.current_customer_list)-1] + self.current_customer_list[0:len(self.current_customer_list)-1]
@@ -253,12 +289,13 @@ class vehicleRoutingEnv(gym.Env):
                 self.unvisited.remove(current_index)
                 #Adjust truck capacity accordingly
                 #Adjust customer demand accordingly
-                self.current_truck_capacity=self.current_truck_capacity-self.current_customer_list[0][1]
-                self.current_truck_capacity=self.total_truck_capacity
+ #               print(f"Capacity: {self.current_truck_capacity}")
+ #               print(f"Demand: {self.current_customer_list[current_index][self.index_demand]}")
+                self.current_truck_capacity=self.current_truck_capacity-self.current_customer_list[current_index][self.index_demand]
                 #Adjust the customer's demand to 0 because the customers order has been filled
                 self.current_customer_list[current_index][self.index_demand]=0
                 #Reward is negative distance from current location to old location
-                reward=self.current_customer_list[current_index][self.index_dist_to_truck]
+                reward=-self.current_customer_list[current_index][self.index_dist_to_truck]
                 self.last_move=self.action_pickup
                 self.update()
             else:
@@ -268,7 +305,9 @@ class vehicleRoutingEnv(gym.Env):
             #Reward is distance to depot
             self.position_list[current_index]=0
             self.position_list[0]=1
-            reward=self.current_customer_list[current_index][self.index_dist_to_depot]
+#            print(f"Current customer: {self.current_customer_list[current_index]}")
+            #Check distance from last visited customer to depot
+            reward=-self.current_customer_list[self.visited[len(self.visited)-1]][self.index_dist_to_depot]
             #Shift the list accordingly
             #self.current_customer_list=self.current_customer_list[self.depot_index:]+self.current_customer_list[0:self.depot_index]
             #Refill truck capacity
@@ -299,6 +338,9 @@ class vehicleRoutingEnv(gym.Env):
                 state.append(self.depot_location[0])
                 state.append(self.depot_location[1])
         state.insert(0,self.position_list)
+        #Appending information about currrent and total capacity
+        state.append(self.current_truck_capacity)
+        state.append(self.total_truck_capacity)
         f_state = self.flat_list(state)
         return f_state, reward, isDone, truncated, {"visited":self.visited}
 
@@ -316,6 +358,9 @@ class vehicleRoutingEnv(gym.Env):
                 state.append(self.depot_location[0])
                 state.append(self.depot_location[1])
         state.insert(0,self.position_list)
+        #Appending information about currrent and total capacity
+        state.append(self.current_truck_capacity)
+        state.append(self.total_truck_capacity)
         f_state = self.flat_list(state)
         print(f"States: {state}")
         print(f"States List: {f_state}")
