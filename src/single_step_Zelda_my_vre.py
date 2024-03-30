@@ -183,8 +183,6 @@ class vehicleRoutingEnv(gym.Env):
     def get_invalid_ones(self):
         mask=[]
         #If at depot, you cannot "pickup" the depot
-        if len(self.unvisited)==1:
-            mas
         if self.position_list.index(1)==0:
             mask.append(self.action_pickup)
         #If already at depot, then going back to depot is invalid, otherwise depot is always available
