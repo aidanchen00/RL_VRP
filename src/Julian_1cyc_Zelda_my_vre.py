@@ -416,6 +416,7 @@ class vehicleRoutingEnv(gym.Env):
         f_list = [item for sublist in mixed_list for item in (sublist if isinstance(sublist, list) else [sublist])]
         return f_list
         
+        
     def render(self):
         #printing out matrices
         state = []
