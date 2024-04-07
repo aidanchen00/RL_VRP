@@ -112,7 +112,24 @@ class vehicleRoutingEnv(gym.Env):
                     self.reordered_customer_list.append(customer)
             """
         #Sets main list to reordered list
-
+    
+    def get_state(self):
+        state = []
+        for sublist in self.current_customer_list:
+            if sublist!=self.depot_location:
+                state.extend([sublist[self.index_coord][0],sublist[self.index_coord][1],sublist[self.index_demand],\
+                sublist[self.index_dist_to_depot],sublist[self.index_dist_to_truck],sublist[self.index_pos_rel_depot][0],\
+                sublist[self.index_pos_rel_depot][1],sublist[self.index_pos_rel_truck][0],sublist[self.index_pos_rel_truck][1]])
+            else:
+                state.append(self.depot_location[0])
+                state.append(self.depot_location[1])
+        state.insert(0,self.position_list)
+        #Appending information about currrent and total capacity
+        state.append(self.current_truck_capacity)
+        state.append(self.total_truck_capacity)
+        
+        f_state = self.flat_list(state)
+        return f_state
             
     #defining reset function for when environment needs to be reset after termination state
     def reset(self):
