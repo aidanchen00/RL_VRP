@@ -71,6 +71,38 @@ class vehicleRoutingEnv(gym.Env):
         # each customer sublist and its information
         #Shape is each customer*its 9 attributes, then plus two for depot coordinates, then plus two for current capacity and max capacity, then plus position list length 
         self.observation_space = gym.spaces.Box(low=-1000, high=1000, shape=(len(self.unvisited)*9+4+len(self.position_list),), dtype=np.float32)
+
+    def config(self, current_customer_list, current_truck_capacity, total_truck_capacity, depot_location):
+        self.current_customer_list=current_customer_list
+        #current_truck_capacity stores the current truck capacity
+        self.current_truck_capacity=current_truck_capacity
+        #total_truck_capacity stores the capacity of a fully refilled truck
+        self.total_truck_capacity=total_truck_capacity
+        #Create start information for reset function to reference
+        self.start_current_customer_list=copy.deepcopy(self.current_customer_list)
+        self.start_current_truck_capacity=copy.deepcopy(self.current_truck_capacity)
+        self.start_total_truck_capacity=copy.deepcopy(self.total_truck_capacity)
+        self.depot_location=depot_location
+        self.start_depot_location=copy.deepcopy(self.depot_location)
+        self.position_list=[0 for i in range(len(self.current_customer_list))]
+        self.position_list[0]=1
+        self.start_position_list=copy.deepcopy(self.position_list)
+        #Define unvisited and visited vector to keep track
+        #Names of indexes that are referenced frequently
+        #Index values for current customer list information
+ 
+        #Starts move at back to depot
+        self.last_move=self.action_goback
+        #Define variable to store num of moves since last selection
+        self.num_last_moves=0
+        #Light penalty for swiping left and right
+        self.left_right_reward = 0
+        #Defining visited and unvisited list
+        self.visited=[]
+        #Define max distance
+        self.max_dist=0
+        #Length is N customers+1 because includes depot
+        self.unvisited=[i for i in range(1,len(self.current_customer_list))]
         
     def sort(self,list):
         # Sort the list of tuples based on the first element of each tuple
@@ -368,7 +400,11 @@ class vehicleRoutingEnv(gym.Env):
             #Reward is distance to depot
             #print(f"action: {str(action)}")
             # Reward is the negative distance from where you are to depot
-            reward=-self.current_customer_list[current_index][self.index_dist_to_depot]
+            for customer_idx in range(1,len(self.current_customer_list)):
+#                print(f"Customers: {self.current_customer_list[customer_idx]}")
+                if self.current_customer_list[customer_idx][self.index_pos_rel_truck]==(0.0,0.0):
+                    at_index=customer_idx
+            reward=-self.current_customer_list[at_index][self.index_dist_to_depot]
             self.position_list[current_index]=0
             self.position_list[0]=1
 #            print(f"Current customer: {self.current_customer_list[current_index]}")
